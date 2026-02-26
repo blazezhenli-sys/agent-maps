@@ -8,13 +8,18 @@ def get_city_geojson(city_query):
     """
     Taiwan-Specific Fetcher.
     Resolves city to OSM ID and fetches Level 7 Districts (區).
+    If no Level 7 results are found, it falls back to Level 8.
     """
     overpass_url = "https://overpass.kumi.systems/api/interpreter"
-    geolocator = Nominatim(user_agent="taiwan_area_vibe_check")
+    geolocator = Nominatim(user_agent="taiwan_area_vibe_checker")
     
-    # 1. Resolve Location (e.g., "Taichung", "Taipei", "Kaohsiung")
+    # 1. Resolve Location
     print(f"🌐 Resolving City: {city_query}...")
     locations = geolocator.geocode(city_query, exactly_one=False, limit=5)
+
+    if not locations:
+        print(f"❌ Could not resolve city: {city_query}")
+        return None, None
     
     target_location = None
     for loc in locations:
@@ -28,150 +33,99 @@ def get_city_geojson(city_query):
         print(f"✅ Found Relation ID: {target_location.raw.get('osm_id')}")
 
     osm_id = int(target_location.raw.get('osm_id'))
-    print("OSM ID:", osm_id)
-    # Taiwan Cities are Relations. Add 3.6B for the Overpass Area ID.
+    area_id = osm_id + 3600000000  # For Overpass area query
 
-    # 2. Taiwan-Strict Query (Level 7 Districts only)
-    # This avoids the '9 results' bug by skipping neighborhoods and targeting Districts.
-    query = f"""
-    [out:json][timeout:180];
-    area({osm_id + 3600000000})->.cityArea;
-    (
-    // Strictly only Level 7 (Districts)
-    relation["boundary"="administrative"]["admin_level"="7"](area.cityArea);
-    );
-    out geom; 
-    """
-    
-    print(f"🌍 Fetching Level 7 Districts for {city_query}...")
+    # 2. Query for administrative boundaries with fallback
     try:
-        response = requests.get(overpass_url, params={'data': query}, timeout=60)
+        # First, try admin_level=7
+        print(f"🌍 Fetching Level 7 Districts for {city_query}...")
+        query_l7 = f"""
+        [out:json][timeout:180];
+        area({area_id})->.cityArea;
+        (relation["boundary"="administrative"]["admin_level"="7"](area.cityArea););
+        out geom; 
+        """
+        response = requests.get(overpass_url, params={'data': query_l7}, timeout=180)
         response.raise_for_status()
-        
-        # Convert to standard GeoJSON
         geojson_data = osm2geojson.json2geojson(response.json())
-        return geojson_data, target_location
-    except Exception as e:
-        print(f"❌ OSM Fetch Error: {e}")
-        return None, None
 
-import os
-import json
-import pandas as pd
-import folium
-def generate_choropleth(cities, topic):
-
-    if not cities:
-        return None
-
-    base_map = None
-    valid_city_added = False
-
-    for city in cities:
-
-        data_file = f"{city}_{topic}_data.json"
-        geo_file = f"{city}_{topic}_map.geojson"
-
-        if not (os.path.exists(data_file) and os.path.exists(geo_file)):
-            print(f"Missing files for {city}")
-            continue
-
-        with open(data_file, "r") as f:
-            mapping_data = json.load(f)
-
-        with open(geo_file, "r") as f:
-            geojson_data = json.load(f)
-
+        # If no features found, fallback to admin_level=8
         if not geojson_data.get("features"):
-            continue
+            print("⚠️ No results at Level 7. Trying Level 8...")
+            query_l8 = f"""
+            [out:json][timeout:180];
+            area({area_id})->.cityArea;
+            (relation["boundary"="administrative"]["admin_level"="8"](area.cityArea););
+            out geom; 
+            """
+            response = requests.get(overpass_url, params={'data': query_l8}, timeout=180)
+            response.raise_for_status()
+            geojson_data = osm2geojson.json2geojson(response.json())
 
-        df = pd.DataFrame(list(mapping_data.items()), columns=["name", "value"])
+        return geojson_data, target_location
 
-        # ─────────────────────────────
-        # Normalize properties + inject score
-        # ─────────────────────────────
-        score_lookup = dict(mapping_data)
+    except requests.exceptions.RequestException as e:
+        print(f"❌ OSM Request Error: {e}")
+        return None, None
+    except Exception as e:
+        print(f"❌ OSM Fetch or Conversion Error: {e}")
+        return None, None
+    
+import json, folium, os, branca.colormap as cm
+def generate_interactive_map(city, topic, scores, map_center=None, map_zoom=None, interactive=True):
 
-        for feature in geojson_data["features"]:
-            props = feature["properties"]
-
-            # safely extract district name
-            district = None
-            if "tags" in props:
-                district = props["tags"].get("name:en") or props["tags"].get("name")
-            else:
-                district = props.get("name")
-
-            feature["properties"]["district"] = district
-            feature["properties"]["score"] = score_lookup.get(district, None)
-
-        # ─────────────────────────────
-        # Initialize map
-        # ─────────────────────────────
-        if base_map is None:
-            first_feature = geojson_data["features"][0]
-            geometry = first_feature["geometry"]
-
-            if geometry["type"] == "Polygon":
-                lon, lat = geometry["coordinates"][0][0]
-            elif geometry["type"] == "MultiPolygon":
-                lon, lat = geometry["coordinates"][0][0][0]
-            else:
-                raise ValueError(f"Unsupported geometry type: {geometry['type']}")
-
-            base_map = folium.Map(
-                location=[lat, lon],
-                zoom_start=10,
-                tiles="cartodbpositron"
-            )
-
-        # ─────────────────────────────
-        # Choropleth (color layer)
-        # ─────────────────────────────
-        folium.Choropleth(
-            geo_data=geojson_data,
-            data=df,
-            columns=["name", "value"],
-            key_on="feature.properties.district",  # safer
-            fill_color="RdYlGn",
-            fill_opacity=0.7,
-            line_opacity=0.4,
-            legend_name=f"{city} {topic} Index",
-            nan_fill_color="gray",
-            name=city,
-            overlay=True,
-            control=True,
-            show=True
-        ).add_to(base_map)
-
-        # ─────────────────────────────
-        # Hover layer (interaction layer)
-        # ─────────────────────────────
-        folium.GeoJson(
-            geojson_data,
-            name=f"{city} hover",
-            style_function=lambda x: {
-                "fillColor": "transparent",
-                "color": "black",
-                "weight": 1,
-            },
-            highlight_function=lambda x: {
-                "weight": 3,
-                "color": "blue",
-            },
-            tooltip=folium.GeoJsonTooltip(
-                fields=["district", "score"],
-                aliases=["District:", f"{topic.capitalize()} Score:"],
-                localize=True,
-            ),
-        ).add_to(base_map)
-
-        valid_city_added = True
-
-    if not valid_city_added:
+    geo_file = f"{city}_{topic}_map.geojson"
+    if not os.path.exists(geo_file):
         return None
 
-    folium.LayerControl(collapsed=False).add_to(base_map)
-    base_map.fit_bounds(base_map.get_bounds())
+    with open(geo_file) as f:
+        geojson_data = json.load(f)
 
-    return base_map
+    # Attach scores and ensure 'district' property exists
+    for feature in geojson_data["features"]:
+        props = feature["properties"]
+        district = (props.get("tags", {}).get("name:en") or
+                    props.get("tags", {}).get("name") or
+                    props.get("name") or
+                    "Unnamed Area")  # Fallback for features with no name
+        feature["properties"]["district"] = district
+        feature["properties"]["score"] = scores.get(district)
+
+    # Gradient colormap
+    colormap = cm.LinearColormap(
+        colors=["red", "orange", "yellow", "green"],
+        vmin=0, vmax=1
+    )
+    colormap.caption = f"{topic.capitalize()} Score"
+
+    def style_function(feature):
+        score = feature["properties"]["score"]
+        if score is None:
+            return {"fillColor": "#ddd", "color": "black", "weight": 1, "fillOpacity": 0.4}
+        return {"fillColor": colormap(score), "color": "black", "weight": 1, "fillOpacity": 0.75}
+
+    # Use stored center/zoom if available
+    m = folium.Map(
+        location=map_center or [23.7, 121],
+        zoom_start=map_zoom or 7,
+        tiles="cartodbpositron",
+        dragging=interactive,
+        touch_zoom=interactive,
+        scroll_wheel_zoom=interactive,
+        double_click_zoom=interactive,
+        zoom_control=interactive
+    )
+
+    folium.GeoJson(
+        geojson_data,
+        style_function=style_function,
+        tooltip=folium.GeoJsonTooltip(
+            fields=["district", "score"],
+            aliases=["District:", "Score:"],
+            localize=True
+        ),
+        highlight_function=lambda x: {"weight": 3, "color": "blue"}
+    ).add_to(m)
+
+    colormap.add_to(m)
+    return m
