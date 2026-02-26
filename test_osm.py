@@ -1,87 +1,66 @@
-import requests
+# test_japan_subregions.py
 import json
-import osm2geojson
 from geopy.geocoders import Nominatim
+import requests
+import osm2geojson
 
-def test_osm_id_search(city_query):
-    url = "https://overpass.kumi.systems/api/interpreter"
-    geolocator = Nominatim(user_agent="blaze_map_tester_v1")
-    
-    # 1. SEARCH FOR ALL MATCHES (Not just exactly_one)
-    print(f"🌐 Step 1: Searching for {city_query} boundaries...")
-    locations = geolocator.geocode(city_query, exactly_one=False, limit=5)
-    
+# COUNTRY_CONFIGS from your config file
+COUNTRY_CONFIGS = {
+    "Taiwan": {
+        "city_admin_level": "6",   # immediate subareas (cities/counties)
+        "district_levels": ["7", "8"],  # level 7 primary, fallback to 8
+        "default_district_level": "7",
+    },
+    "Japan": {
+        "city_admin_level": "4",   # prefectures or major cities
+        "district_levels": ["7", "8"],  # prefectures → wards/districts
+        "default_district_level": "7",
+    },
+}
+
+def get_country_subareas(country_name):
+    overpass_url = "https://overpass.kumi.systems/api/interpreter"
+    geolocator = Nominatim(user_agent="country_subarea_test")
+
+    config = COUNTRY_CONFIGS.get(country_name)
+    print("config loaded")
+    if not config:
+        raise ValueError(f"No configuration found for country '{country_name}'")
+    admin_level = config.get("city_admin_level", "4")
+
+    # Resolve country
+    locations = geolocator.geocode(country_name, exactly_one=False, limit=5)
+    print(admin_level)
     if not locations:
-        print("❌ Could not find that city.")
-        return
+        print(f"❌ Could not resolve country: {country_name}")
+        return None, None
 
-    # 2. FIND THE RELATION IN THE LIST
-    target_location = None
-    for loc in locations:
-        if loc.raw.get('osm_type') == 'relation':
-            target_location = loc
-            break
-    
-    # If no relation found, default to the first result (Node)
-    if not target_location:
-        target_location = locations[0]
-        print(f"⚠️ No relation found. Using {target_location.raw.get('osm_type')}")
-    else:
-        print(f"✅ Found Relation ID: {target_location.raw.get('osm_id')}")
+    target_location = next((loc for loc in locations if loc.raw.get("osm_type")=="relation"), locations[0])
+    osm_id = int(target_location.raw.get("osm_id"))
+    area_id = osm_id + 3600000000
 
-    # 3. AREA ID MATH
-    osm_id = int(target_location.raw.get('osm_id'))
-    osm_type = target_location.raw.get('osm_type')
-    
-    if osm_type == 'relation':
-        area_selector = f"area({osm_id + 3600000000})"
-    else:
-        # Fallback to name search if we still only have a node
-        area_selector = f'area[name="{city_query.split(",")[0]}"]'
-
-    # In your Query string:
-    # Use the area_id we found (111968 + 3600000000)
+    print("area_id", area_id)
+    # Query subareas
     query = f"""
-    [out:json][timeout:180];
-    area({osm_id + 3600000000})->.cityArea;
-    (
-    // Strictly only Level 7 (Districts)
-    relation["boundary"="administrative"]["admin_level"="7"](area.cityArea);
-    );
-    out geom; 
-    """
-
-
-
-
-    print(f"📡 Step 2: Fetching shapes from {url}...")
-    try:
-        response = requests.get(url, params={'data': query}, timeout=40)
-        print(f"Status Code: {response.status_code}")
-
-        if response.status_code == 200:
-            osm_data = response.json()
-            
-            # Convert to standard GeoJSON
-            geojson_data = osm2geojson.json2geojson(osm_data)
-            
-            # Extract names to verify we are in the right city
-            names = [f.get('properties', {}).get('name') for f in geojson_data.get('features', [])]
-            names = [n for n in names if n] # Filter out None
-            
-            # Save to file
-            filename = "city_shapes_id_test.geojson"
-            with open(filename, "w") as f:
-                json.dump(geojson_data, f, indent=4)
-            
-            print(f"✅ Success! Saved {len(geojson_data['features'])} features to {filename}")
-            print(f"📍 Sample Neighborhoods Found: {', '.join(names[:5])}...")
-        else:
-            print(f"❌ Server Error: {response.text}")
-            
-    except Exception as e:
-        print(f"💥 Failed: {e}")
+            [out:json][timeout:180];
+            area({area_id})->.cityArea;
+            (relation["boundary"="administrative"]["admin_level"="{admin_level}"](area.cityArea););
+            out geom; 
+            """
+    print("query sent")
+    response = requests.get(overpass_url, params={'data': query}, timeout=300)
+    print("response received", response.json())
+    response.raise_for_status()
+    geojson_data = osm2geojson.json2geojson(response.json())
+    return geojson_data
 
 if __name__ == "__main__":
-    # Test with the specific string to ensure it hits California
-    test_osm_id_search("New Taipei City, Taiwan")
+    print("Fetching Japan subregions...")
+    geojson_japan = get_country_subareas("Japan")
+    if geojson_japan and geojson_japan.get("features"):
+        # Save to JSON
+        with open("japan_subregions.json", "w", encoding="utf-8") as f:
+            json.dump(geojson_japan, f, ensure_ascii=False, indent=2)
+        print("✅ Saved Japan subregions to japan_subregions.json")
+    else:
+        print("❌ Failed to fetch Japan subregions")

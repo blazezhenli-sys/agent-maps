@@ -1,5 +1,5 @@
 # main.py
-
+from country_configs import COUNTRY_CONFIGS
 import re
 import json
 import os
@@ -131,43 +131,46 @@ def serper_search(query):
 # ────────────────────────────────────────────────
 # GeoJSON Handling
 # ────────────────────────────────────────────────
+def ensure_geojson(city, topic, country="Taiwan"):
+    """
+    Ensures GeoJSON file exists for city.
+    Uses country-specific district levels from COUNTRY_CONFIGS.
+    Stores files under countries/<country>/<city>/map.geojson
+    """
+    # Prepare folder
+    city_folder = os.path.join("countries", country, city)
+    os.makedirs(city_folder, exist_ok=True)
 
-def ensure_geojson(city, topic):
-    """
-    Ensures GeoJSON file exists for city and that it contains features.
-    """
-    geo_file = f"{city}_{topic}_map.geojson"
+    geo_file = os.path.join(city_folder, "map.geojson")
+    data_file = os.path.join(city_folder, f"{topic}_data.json")  # for scores
 
     if not os.path.exists(geo_file):
-        geojson_data_raw = get_city_geojson(city)
+        # Get country-specific district levels
+        config = COUNTRY_CONFIGS.get(country, {})
+        district_levels = config.get("district_levels", ["7", "8"])
+
+        # Fetch GeoJSON (looping handled inside get_city_geojson)
+        geojson_data_raw = get_city_geojson(city, country=country, district_levels=district_levels)
         if geojson_data_raw and geojson_data_raw[0]:
             geojson_data = geojson_data_raw[0]
-
-            # Validate
-            if not isinstance(geojson_data, dict):
-                raise ValueError("GeoJSON is not a dictionary")
-            if "features" not in geojson_data or not geojson_data["features"]:
-                raise ValueError("GeoJSON has no features")
-
-            # Save validated GeoJSON
-            with open(geo_file, "w") as f:
-                json.dump(geojson_data, f, indent=4)
         else:
-            raise ValueError("Failed to fetch GeoJSON")
+            raise ValueError(f"Failed to fetch GeoJSON for {city}, {country}")
 
-    return geo_file
+        # Save validated GeoJSON
+        with open(geo_file, "w", encoding="utf-8") as f:
+            json.dump(geojson_data, f, indent=4)
+
+    return geo_file, data_file
 
 # ────────────────────────────────────────────────
 # Scoring Engine (Single District)
 # ────────────────────────────────────────────────
 
-def score_district(city, topic, district, logger=print):
+def score_district(data_file, city, topic, district, logger=print):
     """
     Scores ONE district and returns float.
     Uses cached value if available.
     """
-
-    data_file = f"{city}_{topic}_data.json"
 
     # ───── Check Cache ─────
     if os.path.exists(data_file):

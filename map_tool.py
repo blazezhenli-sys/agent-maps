@@ -3,40 +3,37 @@ import osm2geojson
 import folium
 import json
 from geopy.geocoders import Nominatim
+from country_configs import COUNTRY_CONFIGS
 
 
-def get_country_subareas(country_name, admin_level="4"):
+def get_country_subareas(country_name):
     """
     Fetch all immediate subareas of a given country.
-    Defaults to admin_level 6 (e.g., cities/counties for Taiwan).
+    Uses country-specific admin level from COUNTRY_CONFIGS.
     Returns GeoJSON and resolved Nominatim location.
     """
     overpass_url = "https://overpass.kumi.systems/api/interpreter"
-    geolocator = Nominatim(user_agent="taiwan_area_vibe_checker")
+    geolocator = Nominatim(user_agent="area_vibe_checker")
+    
+    config = COUNTRY_CONFIGS.get(country_name)
+    if not config:
+        raise ValueError(f"No configuration found for country '{country_name}'")
+    admin_level = config.get("city_admin_level", "4")
 
-    # 1. Resolve Country
+    # 1️⃣ Resolve Country
     print(f"🌐 Resolving Country: {country_name}...")
     locations = geolocator.geocode(country_name, exactly_one=False, limit=5)
-
     if not locations:
         print(f"❌ Could not resolve country: {country_name}")
         return None, None
 
-    target_location = None
-    for loc in locations:
-        if loc.raw.get('osm_type') == 'relation':
-            target_location = loc
-            break
-    if not target_location:
-        target_location = locations[0]
-        print(f"⚠️ No relation found. Using {target_location.raw.get('osm_type')}")
-    else:
-        print(f"✅ Found Relation ID: {target_location.raw.get('osm_id')}")
+    target_location = next((loc for loc in locations if loc.raw.get('osm_type') == 'relation'), locations[0])
+    print(f"✅ Using Relation ID: {target_location.raw.get('osm_id')}")
 
     osm_id = int(target_location.raw.get('osm_id'))
     area_id = osm_id + 3600000000
 
-    # 2. Query subareas
+    # 2️⃣ Query subareas
     try:
         print(f"🌍 Fetching admin_level={admin_level} subareas for {country_name}...")
         query = f"""
@@ -61,73 +58,59 @@ def get_country_subareas(country_name, admin_level="4"):
         print(f"❌ OSM Fetch or Conversion Error: {e}")
         return None, None
 
-def get_city_geojson(city_query):
+def get_city_geojson(city_query, country="Taiwan", district_levels=None):
     """
-    Taiwan-Specific Fetcher.
-    Resolves city to OSM ID and fetches Level 7 Districts (區).
-    If no Level 7 results are found, it falls back to Level 8.
+    Fetch GeoJSON for a city, trying country-specific district levels with fallbacks.
+    district_levels: list of admin_levels to try (first is preferred)
     """
     overpass_url = "https://overpass.kumi.systems/api/interpreter"
-    geolocator = Nominatim(user_agent="taiwan_area_vibe_checker")
-    
-    # 1. Resolve Location
-    print(f"🌐 Resolving City: {city_query}...")
-    locations = geolocator.geocode(city_query, exactly_one=False, limit=5)
+    geolocator = Nominatim(user_agent="area_vibe_checker")
+    print("1")
+    # Use country config fallback if district_levels not provided
+    if district_levels is None:
+        config = COUNTRY_CONFIGS.get(country, {})
+        district_levels = config.get("district_levels", ["7", "8"])
+    print("2")
 
+    # 1️⃣ Resolve city
+    print(f"🌐 Resolving City: {city_query}, {country}...")
+    locations = geolocator.geocode(f"{city_query}, {country}", exactly_one=False, limit=5)
     if not locations:
-        print(f"❌ Could not resolve city: {city_query}")
+        print(f"❌ Could not resolve city: {city_query}, {country}")
         return None, None
-    
-    target_location = None
-    for loc in locations:
-        if loc.raw.get('osm_type') == 'relation':
-            target_location = loc
-            break
-    if not target_location:
-        target_location = locations[0]
-        print(f"⚠️ No relation found. Using {target_location.raw.get('osm_type')}")
-    else:
-        print(f"✅ Found Relation ID: {target_location.raw.get('osm_id')}")
+    print("3")
+
+    target_location = next((loc for loc in locations if loc.raw.get('osm_type') == 'relation'), locations[0])
+    print(f"✅ Using Relation ID: {target_location.raw.get('osm_id')}")
 
     osm_id = int(target_location.raw.get('osm_id'))
-    area_id = osm_id + 3600000000  # For Overpass area query
+    area_id = osm_id + 3600000000
 
-    # 2. Query for administrative boundaries with fallback
-    try:
-        # First, try admin_level=7
-        print(f"🌍 Fetching Level 7 Districts for {city_query}...")
-        query_l7 = f"""
-        [out:json][timeout:180];
-        area({area_id})->.cityArea;
-        (relation["boundary"="administrative"]["admin_level"="7"](area.cityArea););
-        out geom; 
-        """
-        response = requests.get(overpass_url, params={'data': query_l7}, timeout=180)
-        response.raise_for_status()
-        geojson_data = osm2geojson.json2geojson(response.json())
-
-        # If no features found, fallback to admin_level=8
-        if not geojson_data.get("features"):
-            print("⚠️ No results at Level 7. Trying Level 8...")
-            query_l8 = f"""
+    # 2️⃣ Try district_levels in order until GeoJSON is found
+    for level in district_levels:
+        try:
+            print(f"🌍 Fetching Level {level} Districts for {city_query}...")
+            query = f"""
             [out:json][timeout:180];
             area({area_id})->.cityArea;
-            (relation["boundary"="administrative"]["admin_level"="8"](area.cityArea););
-            out geom; 
+            (relation["boundary"="administrative"]["admin_level"="{level}"](area.cityArea););
+            out geom;
             """
-            response = requests.get(overpass_url, params={'data': query_l8}, timeout=180)
+            response = requests.get(overpass_url, params={'data': query}, timeout=180)
             response.raise_for_status()
             geojson_data = osm2geojson.json2geojson(response.json())
 
-        return geojson_data, target_location
+            if geojson_data.get("features"):
+                return geojson_data, target_location
+            else:
+                print(f"⚠️ No features found at level {level} for {city_query}, trying next level...")
+        except Exception as e:
+            print(f"❌ Error fetching level {level}: {e}")
+            continue
 
-    except requests.exceptions.RequestException as e:
-        print(f"❌ OSM Request Error: {e}")
-        return None, None
-    except Exception as e:
-        print(f"❌ OSM Fetch or Conversion Error: {e}")
-        return None, None
-    
+    print(f"❌ Failed to fetch GeoJSON for {city_query}, {country} at levels {district_levels}")
+    return None, None
+
 import json, folium, os, branca.colormap as cm
 
 def create_base_map(center=[23.7, 121], zoom=7, interactive=True):
@@ -150,10 +133,9 @@ def create_base_map(center=[23.7, 121], zoom=7, interactive=True):
     colormap.add_to(m)
     return m, colormap
 
-def add_geojson_layer(map_object, colormap, city, topic, scores, is_visible=True):
+def add_geojson_layer(map_object, colormap, city, topic, scores, is_visible=True, geo_file=""):
     """Adds a styled GeoJSON FeatureGroup layer to a Folium map."""
     layer_id = f"{city}_{topic}"
-    geo_file = f"{city}_{topic}_map.geojson"
 
     if not os.path.exists(geo_file):
         print(f"Warning: GeoJSON file not found: {geo_file}")
