@@ -2,24 +2,19 @@
 import streamlit as st
 import os
 import json
+import folium
 from streamlit_folium import st_folium
-from map_tool import generate_interactive_map
+from map_tool import create_base_map, add_geojson_layer, get_country_subareas
 from main import ensure_geojson, score_district
 
 st.set_page_config(layout="wide")
 st.title("Taiwan District Agent Maps")
 
 # ─────────────────────────────────────
-# Session State Defaults
+# Session State Defaults for Multi-Layer Maps
 # ─────────────────────────────────────
-if "scores" not in st.session_state:
-    st.session_state.scores = {}
-
-if "selected_city" not in st.session_state:
-    st.session_state.selected_city = None  # Start with no city selected
-
-if "selected_topic" not in st.session_state:
-    st.session_state.selected_topic = "cleanliness"
+if "map_layers" not in st.session_state:
+    st.session_state.map_layers = {}
 
 if "map_center" not in st.session_state:
     st.session_state.map_center = [23.7, 121]
@@ -27,121 +22,148 @@ if "map_center" not in st.session_state:
 if "map_zoom" not in st.session_state:
     st.session_state.map_zoom = 7
 
+# State for triggering AI runs
 if "district_to_process" not in st.session_state:
     st.session_state.district_to_process = None
+if "layer_to_process" not in st.session_state:
+    st.session_state.layer_to_process = None
 
 # ─────────────────────────────────────
-# AI Processing Block
+# Layer-Aware AI Processing Block
 # ─────────────────────────────────────
-if st.session_state.district_to_process:
+if st.session_state.district_to_process and st.session_state.layer_to_process:
+    layer_id = st.session_state.layer_to_process
     district = st.session_state.district_to_process
-    with st.spinner(f"Running AI for {district}..."):
+    
+    if layer_id in st.session_state.map_layers:
+        layer = st.session_state.map_layers[layer_id]
+        city, topic = layer["city"], layer["topic"]
+
+        with st.spinner(f"Running AI for {district} ({topic})..."):
+            try:
+                score = score_district(city=city, topic=topic, district=district, logger=st.write)
+                st.session_state.map_layers[layer_id]["scores"][district] = score
+                st.success(f"{district} ({topic}) scored: {score:.2f}")
+
+                # Save updated scores for the specific layer
+                score_file = f"{city}_{topic}_data.json"
+                with open(score_file, "w") as f:
+                    json.dump(st.session_state.map_layers[layer_id]["scores"], f, indent=2)
+
+            except Exception as e:
+                st.error(f"AI failed for {district}: {e}")
+            finally:
+                st.session_state.district_to_process = None
+                st.session_state.layer_to_process = None
+                st.rerun()
+# ─────────────────────────────────────
+# Sidebar UI
+# ─────────────────────────────────────
+
+CACHE_FILE = "countries/taiwan/cities.json"
+os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+
+if os.path.exists(CACHE_FILE):
+    # 1️⃣ Load cached cities
+    with open(CACHE_FILE, "r", encoding="utf-8") as f:
+        taiwan_cities = json.load(f)
+    print("✅ Loaded Taiwan cities from local cache.")
+else:
+    # 2️⃣ Fetch from OSM and save
+    geojson_taiwan, _ = get_country_subareas("Taiwan", admin_level="4")
+    if geojson_taiwan and geojson_taiwan.get("features"):
+        taiwan_cities = [f["properties"]['tags']["name:en"] for f in geojson_taiwan["features"]]
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(taiwan_cities, f, ensure_ascii=False, indent=2)
+        print("✅ Fetched Taiwan cities from OSM and cached locally.")
+    else:
+        # Fallback if fetching fails
+        taiwan_cities = ["Hsinchu County"]
+        print("⚠️ Failed to fetch Taiwan cities. Using fallback list.")
+
+# Replace the text input with a dropdown
+city_input = st.sidebar.selectbox("City / County", taiwan_cities)
+topic_input = st.sidebar.selectbox("Metric", ["cleanliness", "air quality", "safety", "cost of living"])
+
+if st.sidebar.button("Add Map Layer"):
+    full_city_name = f"{city_input}, Taiwan"  # append country
+    layer_id = f"{city_input}_{topic_input}"
+    
+    if layer_id not in st.session_state.map_layers:
         try:
-            score = score_district(
-                city=st.session_state.selected_city,
-                topic=st.session_state.selected_topic,
-                district=district,
-                logger=lambda x: st.write(x)
-            )
-            st.session_state.scores[district] = score
-            st.success(f"{district} scored: {score:.2f}")
-
-            # Save updated scores
-            with open(f"{st.session_state.selected_city}_{st.session_state.selected_topic}_data.json", "w") as f:
-                json.dump(st.session_state.scores, f, indent=2)
-
+            with st.spinner(f"Loading boundaries for {full_city_name}..."):
+                # send full name to ensure_geojson
+                ensure_geojson(full_city_name, topic_input)
+            
+            scores = {}
+            score_file = f"{full_city_name}_{topic_input}_data.json"
+            if os.path.exists(score_file):
+                print("Found Saved Files")
+                with open(score_file) as f: scores = json.load(f)
+            
+            st.session_state.map_layers[layer_id] = {
+                "city": full_city_name,  # store full name for later consistency
+                "topic": topic_input,
+                "scores": scores,
+                "is_visible": True,
+            }
+            st.rerun()
         except Exception as e:
-            st.error(f"AI failed: {e}")
-        
-        finally:
-            # Always clear the processing state and rerun
-            st.session_state.district_to_process = None
+            st.error(f"Failed to load layer for '{full_city_name}': {e}")
+    else:
+        st.warning(f"Layer '{layer_id}' is already loaded.")
+# ─────────────────────────────────────
+# Main View: Map Rendering
+# ─────────────────────────────────────
+m, colormap= create_base_map(st.session_state.map_center, st.session_state.map_zoom, (st.session_state.district_to_process is None))
+
+if not st.session_state.map_layers:
+    st.info("Add a map layer from the sidebar to begin.")
+    map_data = st_folium(m, width=1200, height=800, key="map_output_initial")
+else:
+    for layer_id, layer_data in st.session_state.map_layers.items():
+        # Robustly check if the item is a valid layer dictionary
+        if isinstance(layer_data, dict) and "city" in layer_data:
+            add_geojson_layer(
+                map_object=m,
+                colormap=colormap,
+                city=layer_data["city"],
+                topic=layer_data["topic"],
+                scores=layer_data["scores"],
+                is_visible=layer_data["is_visible"],
+            )
+    
+    folium.LayerControl().add_to(m)
+    map_data = st_folium(m, width=1200, height=800, key="map_output_layers")
+
+# ─────────────────────────────────────
+# Multi-Layer Click Handling
+# ─────────────────────────────────────
+if map_data and map_data.get("last_active_drawing"):
+    st.session_state.map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+    st.session_state.map_zoom = map_data["zoom"]
+
+    props = map_data["last_active_drawing"]["properties"]
+    district, layer_id = props.get("district"), props.get("layer_id")
+
+    if district and layer_id and layer_id in st.session_state.map_layers:
+        layer_scores = st.session_state.map_layers[layer_id]["scores"]
+        if district in layer_scores:
+            st.info(f"{district} ({st.session_state.map_layers[layer_id]['topic']}) already scored: {layer_scores[district]:.2f}")
+        else:
+            st.session_state.district_to_process = district
+            st.session_state.layer_to_process = layer_id
             st.rerun()
 
 # ─────────────────────────────────────
-# Sidebar Inputs
+# Sidebar Rankings per Layer
 # ─────────────────────────────────────
-city_input = st.sidebar.text_input("City", "Taipei, Taiwan")
-topic_input = st.sidebar.selectbox(
-    "Metric",
-    ["cleanliness", "air quality", "safety", "cost of living"],
-    index=["cleanliness", "air quality", "safety", "cost of living"].index(st.session_state.selected_topic)
-)
-load_map = st.sidebar.button("Load Map")
-
-# ─────────────────────────────────────
-# Map Loading Logic
-# ─────────────────────────────────────
-if load_map:
-    st.session_state.selected_city = city_input
-    st.session_state.selected_topic = topic_input
-    st.session_state.scores = {}  # Reset scores for new selection
-
-    # Load cached scores
-    score_file = f"{st.session_state.selected_city}_{st.session_state.selected_topic}_data.json"
-    if os.path.exists(score_file):
-        with open(score_file) as f:
-            st.session_state.scores = json.load(f)
-
-    # Ensure GeoJSON exists before proceeding to render
-    try:
-        ensure_geojson(st.session_state.selected_city, st.session_state.selected_topic)
-    except Exception as e:
-        st.error(f"Failed to load boundaries for '{st.session_state.selected_city}': {e}")
-        st.info("This can happen if the city name is not found or if there's an issue with the mapping services. Please try a different city, or check the name for typos.")
-        st.session_state.selected_city = None # Reset city to prevent rendering a broken map
-        st.stop()
-
-# ─────────────────────────────────────
-# Main View: Map or Initial Message
-# ─────────────────────────────────────
-if st.session_state.selected_city:
-    # Render map and associated UI only if a city has been successfully loaded
-    base_map = generate_interactive_map(
-        city=st.session_state.selected_city,
-        topic=st.session_state.selected_topic,
-        scores=st.session_state.scores,
-        map_center=st.session_state.map_center,
-        map_zoom=st.session_state.map_zoom,
-        interactive=(st.session_state.district_to_process is None)
-    )
-
-    map_data = None
-    if base_map:
-        map_data = st_folium(
-            base_map,
-            width=1000,
-            height=700,
-            key=f"{st.session_state.selected_city}_{st.session_state.selected_topic}_map"
-        )
-
-    # Detect Clicked District & Run AI
-    if map_data and map_data.get("last_active_drawing"):
-        if "center" in map_data:
-            st.session_state.map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
-        if "zoom" in map_data:
-            st.session_state.map_zoom = map_data["zoom"]
-
-        props = map_data["last_active_drawing"]["properties"]
-        district = props.get("district")
-        if district:
-            if district in st.session_state.scores:
-                st.info(f"{district} already scored: {st.session_state.scores[district]:.2f}")
-            else:
-                st.session_state.district_to_process = district
-                st.rerun()
-
-    # Sidebar Rankings
-    if st.session_state.scores:
-        st.sidebar.markdown("### Ranked Districts")
-        sorted_scores = sorted(
-            st.session_state.scores.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
-        for i, (district, score) in enumerate(sorted_scores, 1):
-            st.sidebar.write(f"{i}. {district} — {score:.2f}")
-
-else:
-    # Initial view before any map is loaded
-    st.info("Please enter a city and click 'Load Map' to begin.")
+if st.session_state.map_layers:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Ranked Districts")
+    for layer_id, layer_data in st.session_state.map_layers.items():
+        if isinstance(layer_data, dict) and layer_data.get("scores"):
+            st.sidebar.markdown(f"**{layer_id}**")
+            sorted_scores = sorted(layer_data["scores"].items(), key=lambda x: x[1], reverse=True)
+            for i, (district, score) in enumerate(sorted_scores[:10], 1):
+                st.sidebar.write(f"{i}. {district} — {score:.2f}")
