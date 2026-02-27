@@ -2,10 +2,14 @@ langchain
 langchain-openai 
 serperfolium 
 geopy 
+ddgs
 python-dotenv
-duckduckgo-search
 langchain-community
 ddgs
 osm2geojson
 googletrans
 streamlit-folium
+wikidata
+wikipedia
+sparqlwrapper
+rapidfuzz

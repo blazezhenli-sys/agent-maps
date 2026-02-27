@@ -1,14 +1,14 @@
 {
-    "Wanhua District": 0.4,
-    "Zhongzheng District": 0.5,
-    "Zhongshan District": 0.5,
-    "Datong District": 0.5,
-    "Da'an District": 0.4,
-    "Xinyi District": 0.42,
-    "Nangang District": 0.74,
-    "Songshan District": 0.42,
-    "Wenshan District": 0.5,
-    "Beitou": 0.45,
-    "Neihu District": 0.8,
-    "Shilin District": 0.52
+  "Wanhua District": 0.5,
+  "Zhongzheng District": 0.85,
+  "Zhongshan District": 0.89,
+  "Datong District": 0.85,
+  "Da'an District": 0.87,
+  "Xinyi District": 0.73,
+  "Nangang District": 0.87,
+  "Songshan District": 0.65,
+  "Wenshan District": 0.8,
+  "Beitou": 0.83,
+  "Neihu District": 0.92,
+  "Shilin District": 0.85
 }

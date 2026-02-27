@@ -19,7 +19,8 @@ if "selected_country" not in st.session_state:
     st.session_state.selected_country = "Taiwan"
 if "selected_topic" not in st.session_state:
     st.session_state.selected_topic = "cleanliness"
-
+if "force_refresh" not in st.session_state:
+    st.session_state.force_refresh = False
 # Initialize map position once
 if "map_center" not in st.session_state:
     config = COUNTRY_CONFIGS.get(st.session_state.selected_country, {})
@@ -41,12 +42,11 @@ if st.session_state.district_to_process and st.session_state.layer_to_process:
     
     if layer_id in st.session_state.map_layers:
         layer = st.session_state.map_layers[layer_id]
-        city, topic = layer["city"], layer["topic"]
-
+        city, topic, country = layer["city"], layer["topic"], layer["country"]
         with st.spinner(f"Running AI for {district} ({topic})..."):
             try:
                 score_file = st.session_state.map_layers[layer_id]["score_file"]
-                score = score_district(data_file=score_file, city=city, topic=topic, district=district, logger=st.write)
+                score = score_district(data_file=score_file, city=city, country=country, topic=topic, district=district, logger=st.write, force_refresh=st.session_state.force_refresh)
                 st.session_state.map_layers[layer_id]["scores"][district] = score
                 st.success(f"{district} ({topic}) scored: {score:.2f}")
 
@@ -119,7 +119,6 @@ if os.path.exists(CACHE_FILE):
     # Load cached cities
     with open(CACHE_FILE, "r", encoding="utf-8") as f:
         country_cities = json.load(f)
-    print(f"✅ Loaded {country_input} cities from local cache.")
 else:
     # Fetch from OSM and save
     geojson_country, _ = get_country_subareas(country_input)
@@ -143,7 +142,10 @@ topic_input = st.sidebar.selectbox(
     ["cleanliness", "air quality", "safety", "cost of living"],
     index=["cleanliness", "air quality", "safety", "cost of living"].index(st.session_state.selected_topic)
 )
-
+st.session_state.force_refresh = st.sidebar.checkbox(
+    "Force refresh (ignore cached scores)",
+    value=st.session_state.force_refresh
+)
 if topic_input != st.session_state.selected_topic:
     st.session_state.selected_topic = topic_input
     st.session_state.map_layers = {}  
@@ -160,8 +162,7 @@ if st.sidebar.button("Add Map Layer"):
         ]
         st.session_state.map_zoom = map_data["zoom"]
 
-    full_city_name = f"{city_input}, {country_input}"
-    layer_id = f"{full_city_name}_{topic_input}"
+    layer_id = f"{city_input}_{topic_input}"
 
     geo_file, score_file = ensure_geojson(city_input, topic_input, country=country_input)
     scores = {}
@@ -170,7 +171,8 @@ if st.sidebar.button("Add Map Layer"):
             scores = json.load(f)
 
     st.session_state.map_layers[layer_id] = {
-        "city": full_city_name,
+        "city": city_input,
+        "country": country_input,
         "topic": topic_input,
         "scores": scores,
         "is_visible": True,
@@ -186,13 +188,12 @@ if st.sidebar.button("Add Map Layer"):
 if map_data and map_data.get("last_active_drawing"):
     st.session_state.map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
     st.session_state.map_zoom = map_data["zoom"]
-
+    
     props = map_data["last_active_drawing"]["properties"]
     district, layer_id = props.get("district"), props.get("layer_id")
-
     if district and layer_id and layer_id in st.session_state.map_layers:
         layer_scores = st.session_state.map_layers[layer_id]["scores"]
-        if district in layer_scores:
+        if district in layer_scores and not st.session_state.force_refresh:
             st.info(f"{district} ({st.session_state.map_layers[layer_id]['topic']}) already scored: {layer_scores[district]:.2f}")
         else:
             st.session_state.district_to_process = district

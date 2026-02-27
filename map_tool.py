@@ -65,12 +65,10 @@ def get_city_geojson(city_query, country="Taiwan", district_levels=None):
     """
     overpass_url = "https://overpass.kumi.systems/api/interpreter"
     geolocator = Nominatim(user_agent="area_vibe_checker")
-    print("1")
     # Use country config fallback if district_levels not provided
     if district_levels is None:
         config = COUNTRY_CONFIGS.get(country, {})
         district_levels = config.get("district_levels", ["7", "8"])
-    print("2")
 
     # 1️⃣ Resolve city
     print(f"🌐 Resolving City: {city_query}, {country}...")
@@ -78,7 +76,6 @@ def get_city_geojson(city_query, country="Taiwan", district_levels=None):
     if not locations:
         print(f"❌ Could not resolve city: {city_query}, {country}")
         return None, None
-    print("3")
 
     target_location = next((loc for loc in locations if loc.raw.get('osm_type') == 'relation'), locations[0])
     print(f"✅ Using Relation ID: {target_location.raw.get('osm_id')}")
