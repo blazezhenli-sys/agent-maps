@@ -40,181 +40,37 @@ TIME_FILTER = "113年 OR 114年 OR 2024 OR 2025"
 # Topic Config
 # ────────────────────────────────────────────────
 
-# def build_catalog_index(path="countries/taiwan/catalog/catalog.json"):
-#     with open(path, "r", encoding="utf-8") as f:
-#         raw = json.load(f)
-
-#     records = raw["Records"]
-
-#     index = []
-
-#     for r in records:
-#         index.append({
-#             "title": r.get("資料集名稱", ""),
-#             "desc": r.get("資料集描述", ""),
-#             "columns": r.get("主要欄位說明", ""),
-#             "category": r.get("服務分類", ""),
-#             "format": r.get("檔案格式", ""),
-#             "url": r.get("下載連結", "")
-#         })
-
-#     return index
-
-# catalogue = build_catalog_index()
-
-# def search_datasets(index, district_zh, city_zh, topic_zh, fuzzy_threshold=80):
-#     """
-#     Search datasets with:
-#     - Mandatory district (fuzzy)
-#     - Weighted scoring for district, city, topic (fuzzy)
-#     - Deduplicate keeping the most recent dataset per title
-#     """
-
-#     def normalize_text(text):
-#         import unicodedata, re
-#         if not text:
-#             return ""
-#         text = unicodedata.normalize("NFKC", text)
-#         text = text.lower()
-#         text = re.sub(r'\s+', '', text)
-#         return text
-
-#     def fuzzy_score(text, term, weight, threshold=fuzzy_threshold):
-#         """Return weighted score if fuzzy match exceeds threshold"""
-#         if fuzz.partial_ratio(term, text) >= threshold:
-#             return weight
-#         return 0
-
-#     def extract_year_from_title(title):
-#         # Try Taiwanese calendar (e.g., 104年度) or 4-digit year
-#         match = re.search(r"\((\d{3,4})年度\)", title)
-#         if match:
-#             return int(match.group(1))
-#         match = re.search(r"\b(20\d{2})\b", title)
-#         if match:
-#             return int(match.group(1))
-#         return 0
-
-#     def deduplicate_keep_most_recent(matches):
-#         # Sort by year descending
-#         matches_sorted = sorted(matches, key=lambda ds: extract_year_from_title(ds["title"]), reverse=True)
-#         seen_titles = set()
-#         unique_matches = []
-#         for ds in matches_sorted:
-#             title = ds["title"]
-#             if title not in seen_titles:
-#                 unique_matches.append(ds)
-#                 seen_titles.add(title)
-#         return unique_matches
-
-#     matches = []
-
-#     district_norm = normalize_text(district_zh)
-#     city_norm = normalize_text(city_zh)
-#     topic_norm = normalize_text(topic_zh)
-
-#     for ds in index:
-#         title_norm = normalize_text(ds['title'])
-#         desc_norm = normalize_text(ds['desc'])
-#         columns_norm = normalize_text(ds['columns'])
-
-#         # Require at least one district mention (fuzzy)
-#         district_match = (
-#             fuzz.partial_ratio(district_norm, title_norm) >= fuzzy_threshold or
-#             fuzz.partial_ratio(district_norm, desc_norm) >= fuzzy_threshold or
-#             fuzz.partial_ratio(district_norm, columns_norm) >= fuzzy_threshold
-#         )
-#         if not district_match:
-#             continue
-
-#         # Weighted fuzzy scoring
-#         score = 0
-#         score += fuzzy_score(title_norm, district_norm, 10)
-#         score += fuzzy_score(desc_norm, district_norm, 5)
-#         score += fuzzy_score(columns_norm, district_norm, 3)
-
-#         score += fuzzy_score(title_norm, city_norm, 5)
-#         score += fuzzy_score(desc_norm, city_norm, 2)
-
-#         score += fuzzy_score(title_norm, topic_norm, 3)
-#         score += fuzzy_score(desc_norm, topic_norm, 2)
-#         score += fuzzy_score(columns_norm, topic_norm, 1)
-
-#         ds_copy = ds.copy()
-#         ds_copy["match_score"] = score
-#         matches.append(ds_copy)
-
-#     # Sort by score descending
-#     matches.sort(key=lambda x: x["match_score"], reverse=True)
-#     # Deduplicate keeping most recent dataset per title
-#     matches = deduplicate_keep_most_recent(matches)
-
-#     return matches
-
-# def query_local_open_data(district, city, topic, max_results=5):
-#     """
-#     Searches local Taiwan open data catalog (already loaded into memory),
-#     downloads matching dataset files (if JSON/CSV),
-#     and returns concatenated data text for LLM context.
-#     """
-#     topic_map = {
-#         "cleanliness": "清潔",
-#         "air quality": "空氣品質",
-#         "safety": "安全",
-#         "cost of living": "生活成本"
-#     }
-#     # Translate to Traditional Chinese for Taiwan catalog matching
-#     topic_zh = topic_map.get(topic.lower(), topic)
-#     district_zh = translator.translate(district, dest="zh-tw").text
-
-#     # Optionally normalize by stripping the "區" suffix
-#     if district_zh.endswith("區"):
-#         district_zh = district_zh[:-1]
-#     city_zh = translator.translate(city, dest="zh-tw").text
-
-#     matches = search_datasets(catalogue, district_zh, city_zh, topic_zh)
-#     print(f"Found {len(matches)} matching datasets:")
-#     for ds in matches:
-#         print("-", ds["title"])
-#     if not matches:
-#         print("No Matches found in Datasets")
-#         return ""
-#     collected_text = []
-#     download_count = 0
-
-#     for ds in matches[:max_results]:
-#         url = ds.get("url")
-#         fmt = ds.get("format", "").lower()
-
-#         if not url:
-#             continue
-
-#         try:
-#             r = requests.get(url, timeout=15)
-#             r.raise_for_status()
-
-#             # Only process JSON or CSV
-#             if "json" in fmt:
-#                 data = r.json()
-#                 collected_text.append(json.dumps(data)[:5000])  # truncate
-#                 download_count += 1
-
-#             elif "csv" in fmt:
-#                 collected_text.append(r.text[:5000])  # truncate
-#                 download_count += 1
-
-#         except Exception:
-#             continue
-
-#     return "\n\n".join(collected_text)
-
+TOPIC_CONFIG = {
+    "cleanliness": {'keywords':["cleanliness", "環境衛生", "垃圾清運", "整潔", "公共場所衛生"],},
+    "air quality": {'keywords':["air quality", "空氣品質", "PM2.5", "AQI"],},
+    "safety": {
+        "keywords": (
+            '"crime rate" OR '
+            '"public safety" OR '
+            '"police reports" OR '
+            '"crime statistics" OR '
+            '"safety index" OR '
+            '"reported incidents"'
+        )
+    },
+    "cost of living": {
+        "keywords": (
+            '"housing prices" OR '
+            '"rent prices" OR '
+            '"cost of living" OR '
+            '"real estate market" OR '
+            '"property prices" OR '
+            '"living expenses"'
+        )
+    },
+}
 # ────────────────────────────────────────────────
 # Search
 # ────────────────────────────────────────────────
-
 def duckduckgo_search(query, max_results=6):
     """
     Uses duckduckgo-search's DDGS class to fetch web search results.
+    Returns a list of individual snippets for scoring.
     """
     snippets = []
     with DDGS() as ddgs:
@@ -224,11 +80,16 @@ def duckduckgo_search(query, max_results=6):
             title = r.get("title", "")
             body  = r.get("body", "") or r.get("snippet", "")
             snippets.append(f"{title} - {body}")
-    return "\n\n".join(snippets)
+    return snippets  # <-- return list, not joined string
 
-def serper_search(query):
+
+def serper_search(query, max_results=6):
+    """
+    Uses Serper API to fetch Google search results.
+    Returns a list of individual snippets for scoring.
+    """
     url = "https://google.serper.dev/search"
-    payload = json.dumps({"q": query, "num": 8})
+    payload = json.dumps({"q": query, "num": max_results})
 
     headers = {
         "X-API-KEY": SERPER_API_KEY,
@@ -239,16 +100,16 @@ def serper_search(query):
     response.raise_for_status()
     results = response.json()
 
-    parts = []
+    snippets = []
 
-    if "answerBox" in results:
-        parts.append(results["answerBox"].get("answer", ""))
+    # Include answer box if present
+    if "answerBox" in results and results["answerBox"].get("answer"):
+        snippets.append(results["answerBox"]["answer"])
 
-    for r in results.get("organic", [])[:6]:
-        parts.append(f"{r.get('title', '')} - {r.get('snippet', '')}")
+    for r in results.get("organic", [])[:max_results]:
+        snippets.append(f"{r.get('title', '')} - {r.get('snippet', '')}")
 
-    return "\n\n".join(parts)
-
+    return snippets  # <-- return list, not joined string
 # ────────────────────────────────────────────────
 # GeoJSON Handling
 # ────────────────────────────────────────────────
@@ -348,80 +209,6 @@ Return ONLY a JSON object with the relevant fields for the topic "{topic}".
 
     return base_instructions + "\n\nSCHEMA:\n" + schema
 
-
-def query_wikipedia(district, city, country):
-    """
-    Fetches enriched Wikipedia info for a district.
-    Includes summary + sections like history, demographics, government.
-    Safely skips missing sections.
-    """
-    wiki_summary = ""
-    enriched_sections = {}
-    page = None
-    try:
-        search_results = wikipedia.search(district)
-        page_title = None
-        for r in search_results:
-            if district.lower() in r.lower():
-                page_title = r
-                break
-
-        if page_title:
-            page = wikipedia.page(page_title)
-
-
-    except wikipedia.DisambiguationError as e:
-        try:
-            page = wikipedia.page(e.options[0])
-        except:
-            pass
-
-    # Combine into area_info string
-    area_info = f"Content: {page.content}\n\n"
-    for sec, body in enriched_sections.items():
-        area_info += f"{sec.capitalize()}:\n{body}\n\n"
-
-    return area_info.strip()
-
-def build_area_info(district, city, country, topic):
-    """
-    Builds a string of context for the LLM:
-    - Wikipedia summary of the district
-    - Web search snippets via Serper using topic keywords
-    """
-    area_info_parts = []
-
-    # 1️⃣ Wikipedia facts
-    try:
-        wiki_facts = query_wikipedia(district, city, country)
-        area_info_parts.append("Wikipedia Info:\n" + wiki_facts)
-    except Exception as e:
-        area_info_parts.append(f"Wikipedia Info: Failed to fetch ({e})")
-
-    # 2️⃣ Web search facts (Serper)
-    try:
-        # Build query using TOPIC_CONFIG keywords
-        keywords = TOPIC_CONFIG.get(topic, {}).get("keywords", "")
-        search_query = f"{district} {city} ({keywords}) {TIME_FILTER}"
-        web_facts = serper_search(search_query)
-        if web_facts.strip():
-            area_info_parts.append("Web Search Info:\n" + web_facts)
-    except Exception as e:
-        area_info_parts.append(f"Web Search Info: Failed to fetch ({e})")
-
-    try:
-        print("DDGS query:",search_query)
-        ddg_facts = duckduckgo_search(search_query, max_results=6)
-        if ddg_facts.strip():
-            print("DuckDuckGo Info:\n" + ddg_facts)
-            area_info_parts.append("DuckDuckGo Info:\n" + ddg_facts)
-    except Exception as e:
-        area_info_parts.append(f"DuckDuckGo Info: Failed ({e})")
-
-
-    # Combine parts and truncate to LLM token limit
-    area_info = "\n\n".join(area_info_parts)
-    return area_info[:12000]  # truncate for safety
 # ────────────────────────────────────────────────
 # Signals → numeric score mapping
 # ────────────────────────────────────────────────
@@ -495,6 +282,191 @@ def signals_to_score(topic, signals):
     raw_score = sum(metrics)/len(metrics)
     return round(raw_score,2)
 
+def generate_search_plan(topic, district, city, country, history):
+    prompt = f"""
+You are an autonomous research agent improving your search strategy.
+
+Goal:
+Find reliable, district-specific evidence about "{topic}"
+in {district}, {city}, {country}.
+
+Previous Attempts:
+{json.dumps(history, indent=2)}
+
+Analyze:
+- Why did previous attempts fail?
+- Were results city-wide instead of district-level?
+- Were they outdated?
+- Were they irrelevant domains?
+
+Now propose a NEW strategy.
+
+Rules:
+- Do NOT repeat failed query patterns.
+- If district specificity was weak, strengthen it.
+- If English failed, try native language.
+- If government sources failed, try statistical keywords.
+- Be concrete and different.
+
+Return ONLY JSON:
+{{
+  "strategy_reasoning": "short explanation",
+  "queries": ["query1", "query2", "query3"]
+}}
+"""
+    reply = llm.invoke(prompt).content.strip()
+
+    try:
+        data = json.loads(reply)
+        print("🧠 Strategy:", data["strategy_reasoning"])
+        return data["queries"]
+    except:
+        return []
+def evaluate_retrieval(topic, district, city, country, results_text):
+    prompt = f"""
+You are evaluating search result quality.
+
+Topic: {topic}
+Location: {district}, {city}, {country}
+
+Search Results:
+{results_text}
+
+Evaluate:
+1. Are the results specific to the correct district?
+2. Are they about the requested topic?
+3. Are they recent and data-driven?
+
+Provide structured feedback focused on **patterns the agent can learn from**:
+- what_worked: abstract patterns to reinforce (e.g., district-specific content, official sources, statistical/data-driven reports, recent years)
+- what_didnt_work: abstract patterns to avoid (e.g., wrong district, outdated content, irrelevant topics, non-official sources)
+
+**IMPORTANT:** Return JSON ONLY, in this exact skeleton. Fill the lists with patterns/signals; do not leave fields out or add extra keys.
+
+Example output:
+
+{{
+  "relevance_score": 0.0,
+  "needs_refinement": true,
+  "what_worked": [],
+  "what_didnt_work": []
+}}
+
+Return your JSON below:
+"""
+    reply = llm.invoke(prompt).content.strip()
+    try:
+        return json.loads(reply)
+    except Exception as e:
+        print("Evaluation parsing failed:", e)
+        return {
+            "relevance_score": 0.0,
+            "needs_refinement": True,
+            "what_worked": [],
+            "what_didnt_work": []
+        }
+    
+import re
+def evaluate_single_result(topic, district, city, country, text):
+    text_lower = text.lower()
+    score = 0.0
+
+    keywords = TOPIC_CONFIG.get(topic, {"keywords":[topic]}).get("keywords", [])
+
+    # ---- District mention ----
+    if district.lower() in text_lower:
+        score += 0.4  # strong signal
+
+    # ---- Keyword/topic mentions ----
+    for kw in keywords:
+        if kw.lower() in text_lower:
+            score += 0.2  # presence counts, not frequency
+
+    # ---- Data/report signals ----
+    data_keywords = ["統計", "數據", "報告", "年", "資料", "table", "statistics"]
+    data_hits = sum(1 for k in data_keywords if k.lower() in text_lower)
+    score += min(data_hits * 0.05, 0.15)
+
+    # ---- Government source ----
+    if ".gov" in text_lower or ".gov.tw" in text_lower:
+        score += 0.1
+
+    return min(score, 1.0)
+
+def agentic_retrieval(district, city, country, topic, max_iters=3):
+    best_results = ""
+    best_score = 0.0
+
+    iteration_history = []
+
+    for i in range(max_iters):
+
+        print(f"\n🧠 Agent iteration {i+1}")
+
+        queries = generate_search_plan(
+            topic, district, city, country,
+            iteration_history
+        )
+
+        iteration_results = []
+        for q in queries:
+            print("🔎 Query:", q)
+
+            try:
+                serper_res = serper_search(q)
+                if serper_res:
+                    iteration_results.extend(serper_res)  # <-- merge all items
+            except Exception as e:
+                print("Serper search failed:", e)
+
+            try:
+                ddg_res = duckduckgo_search(q)
+                if ddg_res:
+                    iteration_results.extend(ddg_res)      # <-- merge all items
+            except Exception as e:
+                print("DuckDuckGo search failed:", e)
+
+        # ---- STEP 1: Per-result scoring ----
+        scored_results = []
+        for idx, result in enumerate(iteration_results):
+            score = evaluate_single_result(topic, district, city, country, result)
+            if score > 0.0:
+                print(f"Evaluated result {idx} of {len(iteration_results)}. Score: {score}")
+                scored_results.append((result, score))
+        # Sort by score descending
+        scored_results.sort(key=lambda x: x[1], reverse=True)
+
+        # Keep top N
+        top_results = [r[0] for r in scored_results[:8]]
+        print(f"Narrowed to {len(top_results)} search results")
+        combined = "\n\n".join(top_results)
+
+        # ---- STEP 2: Evaluate iteration quality ----
+        evaluation = evaluate_retrieval(
+            topic, district, city, country, combined
+        )
+
+        relevance_score = evaluation.get("relevance_score", 0.0)
+
+        print("📊 Relevance:", evaluation)
+
+        # Track best iteration
+        if relevance_score > best_score:
+            best_score = relevance_score
+            best_results = combined
+
+        iteration_history.append({
+            "queries": queries,
+            "evaluation": evaluation
+        })
+
+        if not evaluation.get("needs_refinement", True):
+            print("✅ Agent satisfied with retrieval quality")
+            break
+
+    print(f"\n🏁 Best relevance achieved: {best_score}")
+    return best_results
+
 def score_district(data_file, city, country, topic, district, logger=print, force_refresh=False):
     """
     Scores ONE district and returns float.
@@ -514,7 +486,7 @@ def score_district(data_file, city, country, topic, district, logger=print, forc
         logger("🔄 Force refresh enabled — fetching fresh data")
     logger(f"🔍 Searching data for {district}...")
 
-    area_info = build_area_info(district, city, country, topic)
+    area_info = agentic_retrieval(district, city, country, topic)
     logger("🤖 Running LLM scoring...")
     extraction_prompt = build_extraction_prompt(topic, district, city, country, area_info)
     reply = llm.invoke(extraction_prompt).content.strip()
@@ -533,49 +505,3 @@ def score_district(data_file, city, country, topic, district, logger=print, forc
         json.dump(existing, f, indent=4)
 
     return score
-
-TOPIC_CONFIG = {
-    "cleanliness": {
-        "keywords": (
-            '"sanitation" OR '
-            '"waste management" OR '
-            '"recycling rate" OR '
-            '"cleanliness ranking" OR '
-            '"environmental hygiene" OR '
-            '"garbage collection" OR '
-            '"public cleanliness" OR '
-            '"waste performance"'
-        )
-    },
-    "air quality": {
-        "keywords": (
-            '"air quality" OR '
-            '"PM2.5" OR '
-            '"AQI" OR '
-            '"air pollution" OR '
-            '"air monitoring station" OR '
-            '"pollution level" OR '
-            '"smog"'
-        )
-    },
-    "safety": {
-        "keywords": (
-            '"crime rate" OR '
-            '"public safety" OR '
-            '"police reports" OR '
-            '"crime statistics" OR '
-            '"safety index" OR '
-            '"reported incidents"'
-        )
-    },
-    "cost of living": {
-        "keywords": (
-            '"housing prices" OR '
-            '"rent prices" OR '
-            '"cost of living" OR '
-            '"real estate market" OR '
-            '"property prices" OR '
-            '"living expenses"'
-        )
-    },
-}
