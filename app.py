@@ -4,8 +4,8 @@ import os
 import json
 import folium
 from streamlit_folium import st_folium
-from map_tool import create_base_map, add_geojson_layer, get_country_subareas
-from main import ensure_geojson, score_district
+from map_tool import create_base_map, add_geojson_layer, get_country_subareas, ensure_geojson
+from main import score_district
 from country_configs import COUNTRY_CONFIGS
 
 # ─────────────────────────────────────
@@ -18,7 +18,7 @@ if "map_layers" not in st.session_state:
 if "selected_country" not in st.session_state:
     st.session_state.selected_country = "Taiwan"
 if "selected_topic" not in st.session_state:
-    st.session_state.selected_topic = "cleanliness"
+    st.session_state.selected_topic = "cleanliness-dirtiness"
 if "force_refresh" not in st.session_state:
     st.session_state.force_refresh = False
 # Initialize map position once
@@ -46,7 +46,8 @@ if st.session_state.district_to_process and st.session_state.layer_to_process:
         with st.spinner(f"Running AI for {district} ({topic})..."):
             try:
                 score_file = st.session_state.map_layers[layer_id]["score_file"]
-                score = score_district(data_file=score_file, city=city, country=country, topic=topic, district=district, logger=st.write, force_refresh=st.session_state.force_refresh)
+                result = score_district(data_file=score_file, city=city, country=country, topic=topic, district=district, logger=st.write, force_refresh=st.session_state.force_refresh)
+                score=result.get('score')
                 st.session_state.map_layers[layer_id]["scores"][district] = score
                 st.success(f"{district} ({topic}) scored: {score:.2f}")
 
@@ -56,6 +57,7 @@ if st.session_state.district_to_process and st.session_state.layer_to_process:
 
             except Exception as e:
                 st.error(f"AI failed for {district}: {e}")
+                print(f"AI failed for {district}: {e}")
             finally:
                 st.session_state.district_to_process = None
                 st.session_state.layer_to_process = None
@@ -139,8 +141,8 @@ city_input = st.sidebar.selectbox("City / County", country_cities)
 # Metric dropdown
 topic_input = st.sidebar.selectbox(
     "Metric",
-    ["cleanliness", "air quality", "safety", "cost of living"],
-    index=["cleanliness", "air quality", "safety", "cost of living"].index(st.session_state.selected_topic)
+    ["cleanliness-dirtiness"],
+    index=["cleanliness-dirtiness"].index(st.session_state.selected_topic)
 )
 st.session_state.force_refresh = st.sidebar.checkbox(
     "Force refresh (ignore cached scores)",

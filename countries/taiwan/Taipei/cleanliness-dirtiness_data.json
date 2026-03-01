@@ -1,5 +1,5 @@
 {
-  "Wanhua District": 0.5,
+  "Wanhua District": 0.67,
   "Zhongzheng District": 0.85,
   "Zhongshan District": 0.89,
   "Datong District": 0.85,
@@ -8,7 +8,7 @@
   "Nangang District": 0.87,
   "Songshan District": 0.65,
   "Wenshan District": 0.8,
-  "Beitou": 0.83,
+  "Beitou": 1.0,
   "Neihu District": 0.92,
   "Shilin District": 0.85
 }

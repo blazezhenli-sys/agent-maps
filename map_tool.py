@@ -5,6 +5,36 @@ import json
 from geopy.geocoders import Nominatim
 from country_configs import COUNTRY_CONFIGS
 
+def ensure_geojson(city, topic, country="Taiwan"):
+    """
+    Ensures GeoJSON file exists for city.
+    Uses country-specific district levels from COUNTRY_CONFIGS.
+    Stores files under countries/<country>/<city>/map.geojson
+    """
+    # Prepare folder
+    city_folder = os.path.join("countries", country, city)
+    os.makedirs(city_folder, exist_ok=True)
+
+    geo_file = os.path.join(city_folder, "map.geojson")
+    data_file = os.path.join(city_folder, f"{topic}_data.json")  # for scores
+
+    if not os.path.exists(geo_file):
+        # Get country-specific district levels
+        config = COUNTRY_CONFIGS.get(country, {})
+        district_levels = config.get("district_levels", ["7", "8"])
+
+        # Fetch GeoJSON (looping handled inside get_city_geojson)
+        geojson_data_raw = get_city_geojson(city, country=country, district_levels=district_levels)
+        if geojson_data_raw and geojson_data_raw[0]:
+            geojson_data = geojson_data_raw[0]
+        else:
+            raise ValueError(f"Failed to fetch GeoJSON for {city}, {country}")
+
+        # Save validated GeoJSON
+        with open(geo_file, "w", encoding="utf-8") as f:
+            json.dump(geojson_data, f, indent=4)
+
+    return geo_file, data_file
 
 def get_country_subareas(country_name):
     """
