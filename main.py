@@ -198,66 +198,75 @@ Format final output as JSON with this structure:
     sources_text_block = "\n".join([f"{s['tool']}: {s['text']}" for s in sources])
 
     scoring_prompt = f"""
+    You are an expert municipal urban policy analyst.
 
-You are an expert municipal urban policy analyst.
+    Your task is to evaluate district-level conditions using aggregated evidence,
+    not isolated anecdotes.
 
-Your task is to evaluate district-level conditions using aggregated evidence,
-not isolated anecdotes.
+    District: "{district}"
+    City: {city}
+    Country: {country}
+    Topic: "{topic}"
 
-District: "{district}"
-City: {city}
-Country: {country}
-Topic: "{topic}"
+    Sources:
+    {sources_text_block}
 
-Sources:
-{sources_text_block}
+    INSTRUCTIONS:
 
-INSTRUCTIONS:
+    1. Evaluate conditions at the DISTRICT LEVEL.
+    - Do NOT generalize from a single localized complaint.
+    - A single negative news article does NOT justify a "poor" rating.
+    - Only assign "poor" or "very poor" if there is repeated, systemic,
+        or district-wide evidence of persistent issues.
 
-1. Evaluate conditions at the DISTRICT LEVEL.
-   - Do NOT generalize from a single localized complaint.
-   - A single negative news article does NOT justify a "poor" rating.
-   - Only assign "poor" or "very poor" if there is repeated, systemic,
-     or district-wide evidence of persistent problems.
+    2. Government monitoring reports, routine clean-up reports, or inspection
+    activity indicate baseline functioning — NOT failure.
 
-2. If evidence is mixed, limited, or mostly routine government reporting,
-   default to "average".
+    3. Positive civic activities (e.g., volunteer cleanups, upgrades,
+    improvements, proactive ordinances) indicate active governance and
+    should prevent overly negative scoring.
 
-3. Government monitoring reports, routine clean-up reports, or inspection
-   activity indicate baseline functioning — not failure.
+    4. Be conservative with extreme ratings:
+    - Use "excellent" only if there is strong evidence of exceptional performance.
+    - Use "very poor" only if there is strong evidence of severe, systemic issues.
 
-4. Positive civic activities (e.g., volunteer cleanups, upgrades,
-   improvements) indicate active governance and should prevent overly
-   negative scoring.
+    5. Treat interventions like new rules, fines, or regulations as **evidence of active management**, 
+    not automatically as negative conditions.
 
-5. Be conservative with extreme ratings:
-   - Use "excellent" only if there is strong evidence of exceptional performance.
-   - Use "very poor" only if there is strong evidence of severe, systemic issues.
+    Use ONLY the following scale for every metric:
+    "very poor", "poor", "average", "good", "excellent"
 
-6. If insufficient evidence exists for a metric, assign "average".
+    Metrics to include (fill with estimates if unknown):
+    Positive Metrics:
+    {TOPIC_CONFIG.get(topic).get('metrics').get("positive")}
+    Negative Metrics:
+    {TOPIC_CONFIG.get(topic).get('metrics').get("negative")}
 
-Use ONLY the following scale for every metric:
-"very poor", "poor", "average", "good", "excellent"
-
-Metrics to include (fill with estimates if unknown):
-Positive Metrics:
-{TOPIC_CONFIG.get(topic).get('metrics').get("positive")}
-Negative Metrics:
-{TOPIC_CONFIG.get(topic).get('metrics').get("negative")}
-
-Return JSON only.
-Do NOT include explanations.
-"""
+    Return JSON only.
+    Do NOT include explanations.
+    Use the folloring structure:
+    {{
+    "action": "Final Answer",
+    "action_input": "{{
+        \\"metric1\\": \\"average\\",
+        \\"metric2\\": \\"good\\",
+        \\"metric3\\": \\"poor\\"
+        }}"
+    }}
+    """
     print("Retrieving Scores")
     # Call LLM directly (no tools)
-    scoring_response = llm.invoke(scoring_prompt)
+    scoring_response = retrieval_agent.invoke(scoring_prompt)
+    print('Scoring Response:', scoring_response['output'])
     # Parse JSON safely
-    scoring_text = getattr(scoring_response, "content", scoring_response)
-    print(scoring_text)
+    output_text = scoring_response['output']
     try:
-        metrics = json.loads(scoring_text)
+        metrics = json.loads(output_text)
+        print("Json Loaded Succesfully")
     except Exception:
+        print("Could not load json")
         metrics = {}
+
 
     # --------------------------
     # Stage 3: Convert metrics to numeric score
