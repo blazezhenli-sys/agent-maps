@@ -141,10 +141,14 @@ def score_district(data_file, district, city, country, topic, force_refresh=Fals
         handle_parsing_errors=True
     )
 
+    keywords_string = ",\n".join(topic_keywords)
     retrieval_prompt = f"""
 You are an expert urban data analyst.
 
 Task: Collect **high-quality sources** about "{topic}" in {district}, {city}, {country}.
+
+Here are some potential keywords to help you in your search:
+{keywords_string}
 
 Use the following tools:
 - Serper: official reports, PDFs
