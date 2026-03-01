@@ -159,13 +159,15 @@ Instructions:
 
 Format final output as JSON with this structure:
 {{
-    "action": "Final Answer",
-    "sources": [
-        {{
-            "tool": "Serper",
-            "text": "..."
-        }}
-    ]
+  "action": "Final Answer",
+  "action_input": "{{
+      \\"sources\\": [
+          {{
+              \\"tool\\": \\"Serper\\",
+              \\"text\\": \\"...\\"
+          }}
+      ]
+  }}"
 }}
 """
 
