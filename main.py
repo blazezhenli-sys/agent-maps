@@ -322,25 +322,56 @@ TOPIC_CONFIG = {
     "cleanliness-dirtiness": {
         'keywords': [
             # positive / neutral
-            "cleanliness",        # English
-            "整潔",               # tidy / clean
-            "公共場所衛生",        # public area hygiene
-            "環境衛生",           # environmental hygiene
-            "垃圾清運",           # waste collection
-            "清掃",               # cleaning / sweeping
-            "衛生管理",           # sanitation management
-            "清潔隊",             # sanitation crews
+            "cleanliness", # English
+            "public sanitation", # English
+            "environmental hygiene", # English
+            "waste collection", # English
+            "sweeping", # English
+            "sanitation management", # English
+            "sanitation crews", # English
+            "recycling", # English
+            "整潔", # Chinese
+            "公共場所衛生", # Chinese
+            "環境衛生", # Chinese
+            "垃圾清運", # Chinese
+            "清掃", # Chinese
+            "衛生管理", # Chinese
+            "清潔隊", # Chinese
+            "資源回收", # Chinese
+            "清潔", # Japanese
+            "公衆衛生", # Japanese
+            "環境衛生", # Japanese
+            "ごみ収集", # Japanese
+            "掃除", # Japanese
+            "衛生管理", # Japanese
+            "清掃員", # Japanese
+            "資源回収", # Japanese
 
             # negative / filthiness
-            "dirtiness",          # English
-            "髒亂",               # dirty / messy
-            "垃圾堆積",           # trash accumulation
-            "違規棄置",           # illegal dumping
-            "污染",               # pollution
-            "衛生問題",           # hygiene issues
-            "臭味",               # bad smell / odor
-            "清潔不足",           # insufficient cleaning
-            "環境髒亂"            # messy environment
+            "dirtiness", # English
+            "trash accumulation", # English
+            "illegal dumping", # English
+            "pollution", # English
+            "hygiene issues", # English
+            "bad smell", # English
+            "insufficient cleaning", # English
+            "messy environment", # English
+            "髒亂", # Chinese
+            "垃圾堆積", # Chinese
+            "違規棄置", # Chinese
+            "污染", # Chinese
+            "衛生問題", # Chinese
+            "臭味", # Chinese
+            "清潔不足", # Chinese
+            "環境髒亂", # Chinese
+            "不潔", # Japanese
+            "ごみの蓄積", # Japanese
+            "不法投棄", # Japanese
+            "汚染", # Japanese
+            "衛生問題", # Japanese
+            "悪臭", # Japanese
+            "清掃不足", # Japanese
+            "不衛生な環境" # Japanese
         ],
         'metrics': {
             'positive': """
